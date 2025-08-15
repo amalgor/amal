@@ -13,6 +13,7 @@
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{subcaption}
+\usepackage{fancyhdr}
 
 \geometry{a4paper, margin=1in}
 \hypersetup{
@@ -37,6 +38,16 @@
 
 \begin{document}
 \maketitle
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small DOI: \href{https://doi.org/10.5281/zenodo.16880823}{10.5281/zenodo.16880823}}
+\fancyfoot[R]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\thispagestyle{fancy}
+
 
 \begin{abstract}
 Multi-agent reinforcement learning systems face a fundamental challenge: how to leverage diverse auxiliary agents for exploration while preventing their synthetic experiences from corrupting the primary agent's world model. We introduce \textbf{Asymmetric Multi-Agent Learning (AMAL)}, a framework that strictly isolates world-model updates from auxiliary agent data through information-theoretic gating mechanisms. Our key contributions are: (1) a provably correct isolation mechanism that maintains world-model integrity under auxiliary agent interference with computational overhead $\mathcal{O}(|\mathcal{D}_A|)$; (2) an information-gain objective that improves exploration efficiency by 40\% over standard methods; (3) convergence guarantees for a restricted class of problems with rates matching single-agent lower bounds; and (4) theoretical framework for comprehensive evaluation across diverse domains. Preliminary results are promising, though full benchmarking remains a time and resource intensive process. Code and data are available at \url{https://github.com/anonymous/amal}.
@@ -71,18 +82,22 @@ We introduce Asymmetric Multi-Agent Learning (AMAL), addressing this challenge t
 \item \textbf{Convergence Analysis for Restricted Settings}: For strongly convex world-model losses, we prove convergence at rate $\mathcal{O}((1-\eta\mu)^t)$ matching single-agent lower bounds, showing no asymptotic penalty for auxiliary agents (Theorem~\ref{thm:convergence}).
 
 \item \textbf{Theoretical Framework for Evaluation}: We provide a comprehensive framework for evaluating on diverse benchmarks:
-   - Continuous control: MuJoCo locomotion tasks
-   - Discrete optimization: Combinatorial problems  
-   - Partial observability: Navigation and trading
-   - Comparison with 7 SOTA baselines including QMIX \cite{rashid2018qmix}, MADDPG \cite{lowe2017multi}, and CEM-RL \cite{pourchot2018cem}
+\begin{itemize}
+   \item Continuous control: MuJoCo locomotion tasks
+   \item Discrete optimization: Combinatorial problems  
+   \item Partial observability: Navigation and trading
+   \item Comparison with 7 SOTA baselines including QMIX \cite{rashid2018qmix}, MADDPG \cite{lowe2017multi}, and CEM-RL \cite{pourchot2018cem}
+\end{itemize}
 \end{enumerate}
 
 \subsection{Scope and Limitations}
 
 We explicitly delineate theoretical guarantees from empirical observations:
-- \textbf{Proven}: Information isolation, convergence for convex losses, estimator consistency
-- \textbf{Theoretical}: Framework for performance evaluation on non-convex neural networks, hyperparameter robustness
-- \textbf{Open}: Extension to continuous auxiliary agent adaptation, decentralized settings
+\begin{itemize}
+\item \textbf{Proven}: Information isolation, convergence for convex losses, estimator consistency
+\item \textbf{Theoretical}: Framework for performance evaluation on non-convex neural networks, hyperparameter robustness
+\item \textbf{Open}: Extension to continuous auxiliary agent adaptation, decentralized settings
+\end{itemize}
 
 \section{Related Work}
 
@@ -267,31 +282,27 @@ Per episode of horizon $T$:
 \subsubsection{Benchmarks}
 We propose evaluation on 12 diverse tasks across three categories:
 
-\textbf{Continuous Control (MuJoCo):}
-- HalfCheetah-v4, Ant-v4, Humanoid-v4, Walker2d-v4
-
-\textbf{Discrete Optimization:}
-- Traveling Salesman (TSP-200)
-- Vehicle Routing (CVRP-100)
-- Job Shop Scheduling (JSS-50)
-- Knapsack (KP-1000)
-
-\textbf{Partially Observable:}
-- Navigation (KeyCorridorS8R4)
-- Trading (Crypto, Forex)
-- OSINT Filtering (GDELT)
+\begin{itemize}
+    \item \textbf{Continuous Control (MuJoCo):} HalfCheetah-v4, Ant-v4, Humanoid-v4, Walker2d-v4
+    \item \textbf{Discrete Optimization:} Traveling Salesman (TSP-200), Vehicle Routing (CVRP-100), Job Shop Scheduling (JSS-50), Knapsack (KP-1000)
+    \item \textbf{Partially Observable:} Navigation (KeyCorridorS8R4), Trading (Crypto, Forex), OSINT Filtering (GDELT)
+\end{itemize}
 
 \subsubsection{Baselines}
 We plan to compare against:
-- \textbf{Single-Agent}: PPO \cite{schulman2017proximal}, SAC \cite{haarnoja2018soft}, TD3 \cite{fujimoto2018addressing}
-- \textbf{Multi-Agent}: QMIX \cite{rashid2018qmix}, MADDPG \cite{lowe2017multi}, MAPPO \cite{yu2022surprising}
-- \textbf{Evolutionary}: CEM-RL \cite{pourchot2018cem}, PBT \cite{jaderberg2017population}
+\begin{itemize}
+	\item \textbf{Single-Agent}: PPO \cite{schulman2017proximal}, SAC \cite{haarnoja2018soft}, TD3 \cite{fujimoto2018addressing}
+	\item \textbf{Multi-Agent}: QMIX \cite{rashid2018qmix}, MADDPG \cite{lowe2017multi}, MAPPO \cite{yu2022surprising}
+	\item \textbf{Evolutionary}: CEM-RL \cite{pourchot2018cem}, PBT \cite{jaderberg2017population} 
+\end{itemize}
 
 \subsubsection{Proposed Metrics}
-- \textbf{Performance}: Task reward, success rate
-- \textbf{Efficiency}: Sample complexity to reach 90\% of optimal
-- \textbf{Robustness}: Performance under distribution shift
-- \textbf{Isolation}: KL divergence between world models with/without auxiliary agents
+\begin{itemize}
+	\item \textbf{Performance}: Task reward, success rate
+	\item \textbf{Efficiency}: Sample complexity to reach 90\% of optimal
+	\item \textbf{Robustness}: Performance under distribution shift
+	\item \textbf{Isolation}: KL divergence between world models with/without auxiliary agents
+\end{itemize}
 
 \subsection{Preliminary Results and Current Status}
 
@@ -303,14 +314,22 @@ The theoretical framework provides clear guidance for implementation and evaluat
 
 \subsubsection{Network Architectures}
 
-\textbf{World Model:}
-- Encoder: 3-layer MLP (256-256-128)
-- Dynamics: GRU with 256 hidden units
-- Decoder: 3-layer MLP (128-256-256)
+\begin{itemize}
 
-\textbf{Policy Network:}
-- Actor: 3-layer MLP (256-256-action\_dim)
-- Critic: 3-layer MLP (256-256-1)
+\item \textbf{World Model:}
+\begin{itemize}
+\item Encoder: 3-layer MLP (256-256-128)
+\item Dynamics: GRU with 256 hidden units
+\item Decoder: 3-layer MLP (128-256-256)
+\end{itemize}
+
+\item \textbf{Policy Network:}
+\begin{itemize}
+\item Actor: 3-layer MLP (256-256-action\_dim)
+\item Critic: 3-layer MLP (256-256-1)
+\end{itemize}
+
+\end{itemize}
 
 \subsubsection{Proposed Hyperparameters}
 
@@ -341,22 +360,32 @@ MI estimator policies $K$ & 20 \\
 \subsection{When Does AMAL Excel?}
 
 AMAL provides greatest benefits when:
-1. **High exploration requirements**: Complex state spaces benefit from auxiliary agent diversity
-2. **Distribution shift risk**: Isolation prevents overfitting to synthetic patterns
-3. **Safety constraints**: Guaranteed isolation critical for high-stakes applications
+\begin{itemize}
+\item \textbf{High exploration requirements}: Complex state spaces benefit from auxiliary agent diversity
+\item \textbf{Distribution shift risk}: Isolation prevents overfitting to synthetic patterns
+\item \textbf{Safety constraints}: Guaranteed isolation critical for high-stakes applications
+\end{itemize}
 
 \subsection{Limitations and Future Work}
 
-\textbf{Current Limitations:}
-- Convergence guarantees limited to convex losses
-- Computational overhead from maintaining separate buffers
-- MI estimation variance in high dimensions
+\begin{itemize}
 
-\textbf{Future Directions:}
-- Extension to non-convex settings via landscape analysis
-- Decentralized variants for edge deployment
-- Adaptive auxiliary agent generation
-- Comprehensive empirical validation across proposed benchmarks
+\item \textbf{Current Limitations:}
+\begin{itemize}
+\item Convergence guarantees limited to convex losses
+\item Computational overhead from maintaining separate buffers
+\item MI estimation variance in high dimensions
+\end{itemize}
+
+\item \textbf{Future Directions:}
+\begin{itemize}
+\item Extension to non-convex settings via landscape analysis
+\item Decentralized variants for edge deployment
+\item Adaptive auxiliary agent generation
+\item Comprehensive empirical validation across proposed benchmarks
+\end{itemize}
+
+\end{itemize}
 
 \subsection{Broader Impact}
 
