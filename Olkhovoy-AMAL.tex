@@ -41,7 +41,7 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyfoot[L]{\small DOI: \href{https://doi.org/10.5281/zenodo.16880823}{10.5281/zenodo.16880823}}
+% \fancyfoot[L]{\small DOI: \href{https://doi.org/10.5281/zenodo.16880823}{10.5281/zenodo.16880823}}
 \fancyfoot[R]{\thepage}
 \renewcommand{\headrulewidth}{0pt}
 \renewcommand{\footrulewidth}{0pt}
@@ -50,7 +50,7 @@
 
 
 \begin{abstract}
-Multi-agent reinforcement learning systems face a fundamental challenge: how to leverage diverse auxiliary agents for exploration while preventing their synthetic experiences from corrupting the primary agent's world model. We introduce \textbf{Asymmetric Multi-Agent Learning (AMAL)}, a framework that strictly isolates world-model updates from auxiliary agent data through information-theoretic gating mechanisms. Our key contributions are: (1) a provably correct isolation mechanism that maintains world-model integrity under auxiliary agent interference with computational overhead $\mathcal{O}(|\mathcal{D}_A|)$; (2) an information-gain objective that improves exploration efficiency by 40\% over standard methods; (3) convergence guarantees for a restricted class of problems with rates matching single-agent lower bounds; and (4) theoretical framework for comprehensive evaluation across diverse domains. Preliminary results are promising, though full benchmarking remains a time and resource intensive process. Code and data are available at \url{https://github.com/anonymous/amal}.
+Multi-agent reinforcement learning systems face a fundamental challenge: how to leverage diverse auxiliary agents for exploration while preventing their synthetic experiences from corrupting the primary agent's world model. We introduce \textbf{Asymmetric Multi-Agent Learning (AMAL)}, a framework that strictly isolates world-model updates from auxiliary agent data through information-theoretic gating mechanisms. Our key contributions are: (1) a provably correct isolation mechanism that maintains world-model integrity under auxiliary agent interference with computational overhead $\mathcal{O}(|\mathcal{D}_A|)$; (2) an information-gain objective that improves exploration efficiency by 40\% over standard methods; (3) convergence guarantees for a restricted class of problems with rates matching single-agent lower bounds; and (4) theoretical framework for comprehensive evaluation across diverse domains. Preliminary results are promising, though full benchmarking remains a time and resource intensive process..
 \end{abstract}
 
 \section{Introduction}
