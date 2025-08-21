@@ -10,9 +10,10 @@ import torch.optim as optim
 import numpy as np
 from typing import Dict, Any, Tuple, List
 from torch.distributions import Categorical
+import wandb
 
 # Предполагается, что эти файлы будут созданы на следующих шагах
-from base_algorithm import BaseMAAlgorithm, BaseNetwork
+from .base_algorithm import BaseMAAlgorithm, BaseNetwork
 from utils.replay_buffer import AsymmetricReplayBuffer
 from utils.mi_estimator import MutualInformationEstimator
 
@@ -74,7 +75,9 @@ class AMALAgent(BaseMAAlgorithm):
             capacity=self.config['buffer_size'],
             n_agents=self.n_agents,
             obs_dim=self.obs_dim,
-            state_dim=self.state_dim
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            num_aux_agents=self.config['num_auxiliary_agents']
         )
         
         self.mi_estimator = MutualInformationEstimator(
@@ -99,6 +102,14 @@ class AMALAgent(BaseMAAlgorithm):
         self.cem_population_size = self.config['cem_population_size']
         self.cem_elite_fraction = self.config['cem_elite_fraction']
         self.num_elites = int(self.cem_population_size * self.cem_elite_fraction)
+
+        # Добавим логирование в wandb
+        self.use_wandb = True
+        try:
+            import wandb
+        except ImportError:
+            self.use_wandb = False
+
 
         print("AMAL Agent Initialized successfully.")
 
@@ -173,16 +184,47 @@ class AMALAgent(BaseMAAlgorithm):
                 actions[agent_id] = action.item()
                 # log_probs для вспомогательных агентов нам не нужны для обновления основного,
                 # но могут понадобиться для их собственной эволюции
-                # log_probs[agent_id] = dist.log_prob(action).item()
+                log_probs[agent_id] = dist.log_prob(action).item()
 
         info = {'log_probs': log_probs}
         return actions, info
+
+    def add_experience(self, obs, state, actions, reward, next_obs, next_state, done, available_actions, log_probs):
+        """Готовит и добавляет опыт в соответствующий буфер."""
+        obs_arr = np.array([obs[i] for i in range(self.n_agents)])
+        actions_arr = np.array([actions[i] for i in range(self.n_agents)])
+        next_obs_arr = np.array([next_obs[i] for i in range(self.n_agents)])
+        avail_actions_arr = np.array([available_actions[i] for i in range(self.n_agents)])
+        log_probs_arr = np.array([log_probs.get(i, 0.0) for i in range(self.n_agents)])
+
+        transition = {
+            'obs': obs_arr,
+            'state': state,
+            'actions': actions_arr,
+            'rewards': np.array([reward]),
+            'next_obs': next_obs_arr,
+            'next_state': next_state,
+            'dones': done,
+            'available_actions': avail_actions_arr,
+            'log_probs': log_probs_arr
+        }
+        
+        # ИСПРАВЛЕНИЕ: Правильное разделение данных по буферам
+        # Primary buffer = только данные от основного агента (id=0)
+        # Auxiliary buffer = данные от вспомогательных агентов (id=1,2,...)
+        
+        # Все данные идут в primary buffer (это содержит данные всех агентов для policy обучения)
+        self.replay_buffer.add_primary(transition)
+        
+        # Auxiliary buffer пока не используется, так как все агенты в SMAC управляются одной политикой
+        # В будущем можно добавить отдельную логику для auxiliary данных
+        # self.replay_buffer.add_auxiliary(transition)
 
     def update(self, training_steps: int) -> Dict[str, float]:
         """
         Выполняет полный шаг обновления для AMAL.
         """
-        if len(self.replay_buffer.primary_buffer) < self.config['batch_size']:
+        if len(self.replay_buffer) < self.config['batch_size']:
             return {} # Недостаточно данных для обучения
 
         world_model_loss = self._update_world_model()
@@ -234,8 +276,8 @@ class AMALAgent(BaseMAAlgorithm):
         Обновляет политику (Actor) и оценку состояния (Critic) основного агента,
         используя Advantage Actor-Critic (A2C) с MI бонусом.
         """
-        # Для обновления политики используем только "чистые" данные от основного агента
-        batch = self.replay_buffer.sample_primary(self.config['batch_size'])
+        # Для обновления политики используем смешанные данные, чтобы извлечь пользу из эксплорации
+        batch = self.replay_buffer.sample_mixed(self.config['batch_size'], self.config.get('aux_ratio', 0.5))
         
         # Конвертируем все данные в тензоры
         obs = torch.tensor(batch['obs'], dtype=torch.float32).to(self.device)
@@ -261,7 +303,7 @@ class AMALAgent(BaseMAAlgorithm):
             next_v_values = self.critic(next_state)
         
         # Считаем TD target: R_t + gamma * V(S_{t+1})
-        target_v_values = team_rewards + self.config['gamma'] * next_v_values * (1 - dones)
+        target_v_values = team_rewards + self.config['gamma'] * next_v_values * (1 - dones.unsqueeze(1))
         
         # Лосс критика - это разница между его оценкой и TD target
         critic_loss = nn.functional.mse_loss(current_v_values, target_v_values.detach())
@@ -283,23 +325,27 @@ class AMALAgent(BaseMAAlgorithm):
         advantages = (target_v_values - current_v_values).detach()
 
         # --- Расчет MI бонуса ---
+        # Получаем next_obs для primary агента
+        primary_next_obs = batch['next_obs'][:, 0, :]  # [batch_size, obs_dim]
+        
         mi_bonus = self.mi_estimator.estimate_mi(
             world_model=self.world_model,
             policy=self.actor,
             observations=primary_obs,
-            actions=primary_actions
+            actions=primary_actions,
+            next_observations=primary_next_obs
         )
 
         # --- Комбинированный лосс Политики ---
         # Мы хотим максимизировать (log_probs * advantages) и энтропию
-        # И минимизировать MI бонус (т.к. мы его вычитаем)
+        # и MI бонус (information gain)
         # Поэтому лосс - это отрицательное значение этих величин
         policy_loss = - (log_probs * advantages).mean()
         
         lambda_info = self.config['lambda_info']
         entropy_coef = self.config.get('entropy_coef', 0.01) # Добавляем коэффициент для энтропии
 
-        total_loss = policy_loss - lambda_info * mi_bonus - entropy_coef * entropy + critic_loss
+        total_loss = policy_loss + lambda_info * mi_bonus - entropy_coef * entropy + critic_loss
 
         # --- Шаг оптимизации ---
         self.policy_optimizer.zero_grad()
@@ -322,6 +368,11 @@ class AMALAgent(BaseMAAlgorithm):
         
         # 2. Оценка "пригодности" (fitness) каждого кандидата
         fitness_scores = []
+        
+        # Используем небольшой батч для оценки, чтобы не перегружать память
+        eval_batch = self.replay_buffer.sample_mixed(self.config.get('cem_eval_batch_size', 128))
+        eval_obs = torch.tensor(eval_batch['obs'], dtype=torch.float32).to(self.device)[:, 0, :] # Берем obs только основного агента
+
         for params_vec in population_params:
             # Создаем временную сеть для оценки
             temp_agent = BaseNetwork(
@@ -331,13 +382,24 @@ class AMALAgent(BaseMAAlgorithm):
             ).to(self.device)
             self._set_params_from_vec(temp_agent, params_vec)
             
-            # Фитнес = Разнообразие - бета * Расстояние до основного агента
-            # Здесь мы используем простую метрику: L2 расстояние между весами
-            diversity = torch.cdist(params_vec.unsqueeze(0), population_params).mean()
+            # Фитнес на основе "новизны" предсказаний (ошибка модели мира)
+            with torch.no_grad():
+                logits = temp_agent(eval_obs)
+                actions = Categorical(logits=logits).sample()
+                action_one_hot = F.one_hot(actions, self.action_dim).float()
+                
+                world_model_input = torch.cat([eval_obs, action_one_hot], dim=-1)
+                predicted_next_obs = self.world_model(world_model_input)
+                
+                # Используем ошибку предсказания на реальных данных как метрику новизны
+                real_next_obs = torch.tensor(eval_batch['next_obs'], dtype=torch.float32).to(self.device)[:, 0, :]
+                novelty_error = F.mse_loss(predicted_next_obs, real_next_obs)
+
+            # Расстояние до основного агента для регуляризации
             distance_to_main = torch.norm(params_vec - self._get_params_vec(self.actor))
             
-            beta = self.config.get('cem_beta_dist', 0.5)
-            fitness = diversity - beta * distance_to_main
+            beta = self.config.get('cem_beta_dist', 0.1)
+            fitness = novelty_error - beta * distance_to_main
             fitness_scores.append(fitness.item())
             
         # 3. Выбор "элиты" - кандидатов с наилучшим фитнесом
@@ -353,6 +415,17 @@ class AMALAgent(BaseMAAlgorithm):
         for i in range(min(self.num_aux_agents, self.num_elites)):
             self._set_params_from_vec(self.aux_agents[i], elite_params[-(i+1)])
             
+        if self.use_wandb:
+            try:
+                wandb.log({
+                    "cem_best_fitness": max(fitness_scores),
+                    "cem_avg_fitness": np.mean(fitness_scores),
+                    "cem_mu_norm": self.cem_mu.norm().item(),
+                    "cem_sigma_norm": self.cem_sigma.norm().item()
+                })
+            except Exception:
+                # Wandb not initialized, skip logging
+                pass
         print(f"Auxiliary agents evolved. New best fitness: {max(fitness_scores):.4f}")
         
     def save(self, path: str):

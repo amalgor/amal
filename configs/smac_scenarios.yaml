@@ -1,0 +1,20 @@
+scenarios:
+  easy:
+    - "3m"
+    - "2s3z"
+    
+  medium:
+    - "8m"
+    - "5m_vs_6m"
+    - "2s_vs_1sc"
+    
+  hard:
+    - "MMM"
+    - "3s5z"
+    
+  super_hard:
+    - "corridor"
+    - "6h_vs_8z"
+    
+test_episodes: 32
+parallel_envs: 8

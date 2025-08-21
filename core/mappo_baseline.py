@@ -10,7 +10,7 @@ import torch.optim as optim
 import numpy as np
 from typing import Dict, Any, Tuple
 
-from base_algorithm import BaseMAAlgorithm, BaseNetwork
+from .base_algorithm import BaseMAAlgorithm, BaseNetwork
 from torch.distributions import Categorical
 
 class MAPPO(BaseMAAlgorithm):
@@ -85,7 +85,8 @@ class MAPPO(BaseMAAlgorithm):
 
                 if available_actions and agent_id in available_actions:
                     avail_actions_tensor = torch.tensor(available_actions[agent_id], dtype=torch.float32).to(self.device)
-                    logits[avail_actions_tensor == 0] = -1e10
+                    # Приводим маску к форме [1, 9], чтобы она совпадала с logits
+                    logits[avail_actions_tensor.unsqueeze(0) == 0] = -1e10
                 
                 dist = Categorical(logits=logits)
                 action = dist.sample()

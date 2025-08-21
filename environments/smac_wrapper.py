@@ -2,9 +2,19 @@
 SMAC Environment Wrapper. (Production Version)
 """
 
-import numpy as np
+import sys
+from pathlib import Path
+import os
+
+# Добавляем путь к PyMARL в sys.path
+# Предполагаем, что pymarl находится в корневой директории проекта
+PYMARL_PATH = str(Path(__file__).resolve().parent.parent / "pymarl" / "src")
+if PYMARL_PATH not in sys.path:
+    sys.path.append(PYMARL_PATH)
+
 from smac.env import StarCraft2Env
-from typing import Dict, Tuple, Any
+import numpy as np
+from typing import Dict, Tuple, List, Any
 import traceback 
 
 class SMACWrapper:

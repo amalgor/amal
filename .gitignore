@@ -1,0 +1,25 @@
+# Large refs
+ref.pdf
+# LaTeX build
+*.aux
+*.log
+*.out
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+
+
+**/venv/**
+venv_*/**
+**/__pycache__/**
+*.pyc
+*.bbl
+*.blg
+
+**/.env
+**/results/**
+**/wandb/**
+models/** */
+collected_replays/**
+collected_replays/amal_2s_vs_1sc_random_1_20250821_085119_metadata.json

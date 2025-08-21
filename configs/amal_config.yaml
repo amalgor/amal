@@ -1,0 +1,32 @@
+algorithm:
+  name: "AMAL"
+  
+  # World model
+  world_model:
+    hidden_dims: [256, 256, 128]
+    learning_rate: 0.0003
+    
+  # Policy network (Actor & Critic)
+  policy:
+    hidden_dims: [256, 256]
+    learning_rate: 0.0003
+    
+  # AMAL specific - ОПТИМИЗИРОВАННЫЕ ПАРАМЕТРЫ
+  lambda_info: 0.5  # Увеличено для большего влияния MI
+  num_auxiliary_agents: 32  # Больше разнообразия
+  mi_estimator_samples_M: 50  # Оптимизировано для скорости
+  mi_estimator_policies_K: 10
+  
+  # CEM evolution - УСКОРЕННАЯ ЭВОЛЮЦИЯ
+  cem_population_size: 50  # Уменьшено для ускорения
+  cem_elite_fraction: 0.3  # Больше элиты
+  evolution_frequency: 5   # Более частая эволюция
+  cem_init_sigma: 0.15     # Больше разнообразия
+  cem_beta_dist: 0.3
+  
+  # Training
+  batch_size: 256
+  gamma: 0.99
+  buffer_size: 500000
+  max_grad_norm: 10.0
+  entropy_coef: 0.01

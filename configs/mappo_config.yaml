@@ -1,0 +1,26 @@
+algorithm:
+  name: "MAPPO"
+  
+  # Networks
+  actor:
+    hidden_dims: [256, 256]
+    learning_rate: 0.0005
+    
+  critic:
+    hidden_dims: [256, 256]
+    learning_rate: 0.0005
+    
+  # PPO parameters
+  clip_param: 0.2
+  value_clip: 0.2 # Не используется в нашей реализации, но стандартный параметр
+  entropy_coef: 0.01
+  max_grad_norm: 10.0
+  
+  # Training
+  n_epochs: 5       # Количество эпох обновления PPO
+  n_minibatch: 1  # Количество мини-батчей (1 = без мини-батчей)
+  gamma: 0.99
+  gae_lambda: 0.95
+  buffer_size: 32  # episodes
+  # Buffer для MAPPO должен хранить данные для нескольких эпизодов
+  # Этот параметр будет управляться из главного скрипта
