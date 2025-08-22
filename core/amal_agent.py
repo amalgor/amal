@@ -86,14 +86,10 @@ class AMALAgent(BaseMAAlgorithm):
         )
 
         # --- Управление вспомогательными агентами ---
-        self.num_aux_agents = self.config['num_auxiliary_agents']
-        self.aux_agents = [
-            BaseNetwork(
-                input_dim=obs_dim, 
-                output_dim=action_dim, 
-                hidden_dims=self.config['policy']['hidden_dims']
-            ).to(self.device) for _ in range(self.num_aux_agents)
-        ]
+        # Версия "B": обучаем одну общую политику для всех агентов, чтобы упростить отладку.
+        # Сохраняем значение num_aux_agents, но отключаем отдельные сети.
+        self.num_aux_agents = 0
+        self.aux_agents = []
         # --- Инициализация параметров для CEM ---
         # Мы будем поддерживать распределение (среднее и ковариацию) для весов вспомогательных агентов
         self.cem_mu = self._get_params_vec(self.actor) # Начинаем с параметров основного агента
@@ -166,13 +162,13 @@ class AMALAgent(BaseMAAlgorithm):
             actions[agent_id] = action.item()
             log_probs[agent_id] = dist.log_prob(action).item()
 
-            # --- Вспомогательные агенты ---
-            for i, aux_agent_net in enumerate(self.aux_agents):
-                agent_id = i + 1 # ID вспомогательных агентов начинаются с 1
-                if agent_id not in observations: continue
+            # --- Остальные агенты используют ту же политику ---
+            for agent_id in range(1, self.n_agents):
+                if agent_id not in observations:
+                    continue
 
                 obs_tensor = torch.tensor(observations[agent_id], dtype=torch.float32).to(self.device)
-                logits = aux_agent_net(obs_tensor)
+                logits = self.actor(obs_tensor)
 
                 if available_actions and agent_id in available_actions:
                     avail_actions_tensor = torch.tensor(available_actions[agent_id], dtype=torch.float32).to(self.device)
@@ -180,10 +176,8 @@ class AMALAgent(BaseMAAlgorithm):
 
                 dist = Categorical(logits=logits)
                 action = dist.sample()
-                
+
                 actions[agent_id] = action.item()
-                # log_probs для вспомогательных агентов нам не нужны для обновления основного,
-                # но могут понадобиться для их собственной эволюции
                 log_probs[agent_id] = dist.log_prob(action).item()
 
         info = {'log_probs': log_probs}
@@ -231,7 +225,8 @@ class AMALAgent(BaseMAAlgorithm):
         policy_loss, critic_loss, mi_bonus, entropy = self._update_policy()
         
         if training_steps % self.config['evolution_frequency'] == 0:
-            self._evolve_auxiliary()
+            if self.num_aux_agents > 0:
+                self._evolve_auxiliary()
             
         return {
             "world_model_loss": world_model_loss,
@@ -326,7 +321,7 @@ class AMALAgent(BaseMAAlgorithm):
 
         # --- Расчет MI бонуса ---
         # Получаем next_obs для primary агента
-        primary_next_obs = batch['next_obs'][:, 0, :]  # [batch_size, obs_dim]
+        primary_next_obs = torch.tensor(batch['next_obs'][:, 0, :], dtype=torch.float32).to(self.device)
         
         mi_bonus = self.mi_estimator.estimate_mi(
             world_model=self.world_model,
@@ -345,7 +340,7 @@ class AMALAgent(BaseMAAlgorithm):
         lambda_info = self.config['lambda_info']
         entropy_coef = self.config.get('entropy_coef', 0.01) # Добавляем коэффициент для энтропии
 
-        total_loss = policy_loss + lambda_info * mi_bonus - entropy_coef * entropy + critic_loss
+        total_loss = policy_loss - lambda_info * mi_bonus - entropy_coef * entropy + critic_loss
 
         # --- Шаг оптимизации ---
         self.policy_optimizer.zero_grad()

@@ -8,6 +8,7 @@ This estimate serves as the intrinsic motivation bonus for the Information-Seeki
 
 import torch
 import torch.nn as nn
+from torch.distributions import Categorical
 from typing import List
 import sys
 import os
@@ -41,7 +42,7 @@ class MutualInformationEstimator:
         policy: nn.Module,
         observations: torch.Tensor,
         actions: torch.Tensor,
-        next_observations: torch.Tensor = None
+        next_observations: torch.Tensor
     ) -> torch.Tensor:
         """
         Computes the MI estimate I(θ; O) for a given batch of observations.
@@ -53,6 +54,7 @@ class MutualInformationEstimator:
             policy (nn.Module): The current policy network π_φ.
             observations (torch.Tensor): A batch of observations [B, obs_dim].
             actions (torch.Tensor): The actions taken in those states [B].
+            next_observations (torch.Tensor): The ground truth next observations [B, obs_dim].
 
         Returns:
             torch.Tensor: A scalar tensor representing the estimated mutual information.
@@ -64,9 +66,6 @@ class MutualInformationEstimator:
         batch_size = observations.shape[0]
 
         # 1. Вычисляем log p(o|θ, π) для основной политики
-        # В нашем случае p(o|θ,π) - это точность предсказания world_model
-        # для действий, выбранных основной политикой.
-        # Мы аппроксимируем это как логарифм отрицательного MSE.
         log_prob_main = self._compute_log_prob(world_model, observations, actions, next_observations)
 
         # 2. Вычисляем log( (1/K) * Σ_k p(o|θ,π_k) ) для смеси политик
@@ -75,20 +74,17 @@ class MutualInformationEstimator:
         perturbed_policies = self._create_perturbed_policies(policy)
         
         mixture_log_probs = []
-        for i, (obs_sample, action_sample) in enumerate(zip(observations, actions)):
-            # Для каждого (o, a) в батче, считаем его вероятность по смеси политик
+        for i in range(batch_size):
+            # Для каждого (o, a, o') в батче, считаем его вероятность по смеси политик
             sample_probs = []
-            if next_observations is not None:
-                next_obs_sample = next_observations[i]
-                if isinstance(next_obs_sample, torch.Tensor):
-                    next_obs_sample = next_obs_sample.unsqueeze(0)
-                else:
-                    next_obs_sample = torch.tensor(next_obs_sample, dtype=torch.float32).unsqueeze(0)
-            else:
-                next_obs_sample = None
-                
             for p_policy in perturbed_policies:
-                log_p = self._compute_log_prob(world_model, obs_sample.unsqueeze(0), action_sample.unsqueeze(0), next_obs_sample, p_policy)
+                log_p = self._compute_log_prob(
+                    world_model, 
+                    observations[i].unsqueeze(0), 
+                    actions[i].unsqueeze(0), 
+                    next_observations[i].unsqueeze(0), 
+                    p_policy
+                )
                 sample_probs.append(log_p)
             
             # Используем log-sum-exp для стабильного вычисления логарифма суммы
@@ -112,44 +108,35 @@ class MutualInformationEstimator:
         world_model: nn.Module, 
         obs: torch.Tensor, 
         actions: torch.Tensor, 
-        next_obs: torch.Tensor = None,
+        next_obs: torch.Tensor,
         policy: nn.Module = None
     ) -> torch.Tensor:
         """
-        Аппроксимирует log p(o|θ,π) используя точность предсказания world_model 
-        для действий, предсказанных заданной политикой.
+        Вспомогательная функция. Аппроксимирует log p(o'| o, a, θ).
+        Чем точнее world_model предсказывает следующее состояние, тем выше "вероятность".
+        Мы используем инвертированную MSE как прокси для этой вероятности.
+        Если передан `policy`, то действие генерируется этой политикой, чтобы вероятность
+        действительно зависела от параметров политик в смеси.
         """
-        action_dim = world_model.input_dim - obs.shape[-1]
-        
+        # Определяем действие, которое будет использовано для world_model.
         if policy is not None:
-            # Если передана политика, используем её для предсказания действий
+            # Генерируем действие по переданной политике (без градиентов)
             with torch.no_grad():
-                policy_logits = policy(obs)
-                predicted_actions = torch.argmax(policy_logits, dim=-1)
-            action_one_hot = nn.functional.one_hot(predicted_actions, num_classes=action_dim).float()
+                logits = policy(obs)
+                sampled_actions = Categorical(logits=logits).sample()
+            actions_used = sampled_actions
         else:
-            # Иначе используем переданные действия
-            action_one_hot = nn.functional.one_hot(actions, num_classes=action_dim).float()
+            actions_used = actions
+
+        action_dim = world_model.input_dim - obs.shape[-1]
+        action_one_hot = nn.functional.one_hot(actions_used, num_classes=action_dim).float()
         
         world_model_input = torch.cat([obs, action_one_hot], dim=-1)
         predicted_next_obs = world_model(world_model_input)
         
-        if next_obs is not None:
-            # Правильная реализация: используем реальные next_obs
-            # Убеждаемся, что next_obs является tensor на том же device
-            if not isinstance(next_obs, torch.Tensor):
-                next_obs = torch.tensor(next_obs, dtype=torch.float32)
-            next_obs = next_obs.to(predicted_next_obs.device)
-            # Высокая точность предсказания = высокая вероятность
-            mse_error = torch.mean((predicted_next_obs - next_obs) ** 2, dim=-1)
-            # Преобразуем MSE в log-probability (чем меньше ошибка, тем выше вероятность)
-            log_prob = -mse_error  # Можно добавить scaling factor для стабильности
-            return log_prob
-        else:
-            # Fallback: эвристика на основе нормы предсказания
-            # Это менее точно, но лучше чем ничего
-            prediction_confidence = -torch.norm(predicted_next_obs, dim=-1)
-            return prediction_confidence
+        # Правильная реализация: используем MSE между предсказанием и реальностью
+        mse = nn.functional.mse_loss(predicted_next_obs, next_obs, reduction='none').mean(dim=-1)
+        return -mse
 
     def _create_perturbed_policies(self, policy: nn.Module) -> List[nn.Module]:
         """Создает K копий политики с добавленным гауссовым шумом к весам."""
@@ -182,10 +169,11 @@ if __name__ == '__main__':
     # Создаем "игрушечные" данные
     observations = torch.randn(BATCH_SIZE, OBS_DIM).to(DEVICE)
     actions = torch.randint(0, ACTION_DIM, (BATCH_SIZE,)).to(DEVICE)
+    next_observations = torch.randn(BATCH_SIZE, OBS_DIM).to(DEVICE) # Добавляем next_obs
 
     # Инициализируем и запускаем оценщик
     estimator = MutualInformationEstimator(n_samples=10, n_policies=5)
-    mi_value = estimator.estimate_mi(world_model, policy, observations, actions)
+    mi_value = estimator.estimate_mi(world_model, policy, observations, actions, next_observations)
 
     print(f"Estimated MI: {mi_value.item():.6f}")
     assert isinstance(mi_value, torch.Tensor)
